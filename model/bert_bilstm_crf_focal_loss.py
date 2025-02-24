@@ -9,26 +9,6 @@ from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_sc
 import logging
 import datetime
 
-# 配置日志记录
-log_dir = '../log'
-if not os.path.exists(log_dir):
-    os.makedirs(log_dir)
-# 获取当前日期
-current_date = datetime.datetime.now().strftime("%Y%m%d")
-# 获取程序文件名
-script_name = os.path.basename(__file__)
-log_file = os.path.join(log_dir, f"{current_date}_{script_name.replace('.py', '.log')}")
-
-# 配置日志记录器
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(log_file),
-        logging.StreamHandler()
-    ]
-)
-
 # 定义焦点损失函数类
 class FocalLoss(nn.Module):
     def __init__(self, gamma=2, alpha=None):
@@ -174,8 +154,8 @@ class BERT_BiLSTM_CRF(nn.Module):
             return prediction
 
 # 训练模型，只在最后一次epoch后保存模型
-def train_model(model, dataloader, optimizer, epochs=100, batch_size=16, model_save_path='./saved_model',
-                save_model=True, save_log=True):
+def train_model(model, dataloader, optimizer, epochs, batch_size, model_save_path,
+                save_model, save_log):
     model.train()
 
     if save_log:
@@ -307,11 +287,29 @@ if __name__ == "__main__":
 
     test_sentence = '民用无人机大范围使用，其中包含了大量的传感器，比如姿态传感器。'
 
-    model_epochs = 100  # 统一配置训练次数
+    model_epochs = 1  # 统一配置训练次数
 
     # 添加是否保存模型和日志的开关
     save_model_flag = True
     save_log_flag = True
+
+    # 动态配置日志记录器
+    log_dir = '../log'
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    current_date = datetime.datetime.now().strftime("%Y%m%d")
+    script_name = os.path.basename(__file__)
+    log_file = os.path.join(log_dir, f"{current_date}_{script_name.replace('.py', '.log')}")
+
+    handlers = [logging.StreamHandler()]  # 默认只输出到控制台
+    if save_log_flag:
+        handlers.append(logging.FileHandler(log_file))  # 如果需要保存日志，则添加文件处理器
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=handlers
+    )
 
     # 加载数据集
     sentences, labels = read_data_from_txt(data_file)

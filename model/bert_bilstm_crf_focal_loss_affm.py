@@ -9,26 +9,6 @@ from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_sc
 import logging
 import datetime
 
-# 配置日志记录
-log_dir = '../log'
-if not os.path.exists(log_dir):
-    os.makedirs(log_dir)
-# 获取当前日期
-current_date = datetime.datetime.now().strftime("%Y%m%d")
-# 获取程序文件名
-script_name = os.path.basename(__file__)
-log_file = os.path.join(log_dir, f"{current_date}_{script_name.replace('.py', '.log')}")
-
-# 配置日志记录器，同时输出到控制台和文件
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(log_file),
-        logging.StreamHandler()
-    ]
-)
-
 # 定义焦点损失函数类
 class FocalLoss(nn.Module):
     def __init__(self, gamma=2, alpha=None):
@@ -58,9 +38,7 @@ class AdaptiveFeatureFusionModule(nn.Module):
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, bert_features, bilstm_features):
-        # 计算权重
         weights = self.sigmoid(self.weight)
-        # 动态融合特征
         fused_features = weights * bert_features + (1 - weights) * bilstm_features
         return fused_features
 
@@ -74,7 +52,7 @@ def read_data_from_txt(file_path):
         current_labels = []
         for idx, line in enumerate(lines):
             line = line.strip()
-            if line == "":  # 遇到空行，代表一句话结束
+            if line == "":
                 if current_sentence:
                     sentences.append(current_sentence)
                     labels.append(current_labels)
@@ -87,8 +65,8 @@ def read_data_from_txt(file_path):
                     current_labels.append(label)
                 except ValueError:
                     logging.error(f"Error parsing line {idx + 1}: {line}")
-                    continue  # 如果分割不正确，跳过当前行
-        if current_sentence:  # 如果文件结尾没有空行
+                    continue
+        if current_sentence:
             sentences.append(current_sentence)
             labels.append(current_labels)
     return sentences, labels
@@ -177,11 +155,10 @@ class BERT_BiLSTM_CRF(nn.Module):
             return prediction
 
 # 训练模型，只在最后一次epoch后保存模型
-def train_model(model, dataloader, optimizer, epochs, batch_size, model_save_path, save_log=True, save_model=True):
+def train_model(model, dataloader, optimizer, epochs, batch_size, model_save_path, save_log, save_model):
     model.train()
 
     if save_log:
-        # 记录指标表头到日志
         logging.info("Epoch, Loss, Accuracy, Precision, Recall, F1")
 
     for epoch in range(epochs):
@@ -209,20 +186,15 @@ def train_model(model, dataloader, optimizer, epochs, batch_size, model_save_pat
                     all_predictions.extend(pred[:valid_length])  # 添加有效长度的预测结果
                     all_labels.extend(label[:valid_length].cpu().numpy())  # 添加有效长度的真实标签
 
-        # 计算损失
         avg_loss = total_loss / len(dataloader)
-
-        # 计算评估指标
         accuracy = accuracy_score(all_labels, all_predictions)
         precision = precision_score(all_labels, all_predictions, average='weighted', zero_division=0)
         recall = recall_score(all_labels, all_predictions, average='weighted', zero_division=0)
         f1 = f1_score(all_labels, all_predictions, average='weighted', zero_division=0)
 
         if save_log:
-            # 记录每个 epoch 的评估结果到日志
             logging.info(f'{epoch + 1}, {avg_loss}, {accuracy}, {precision}, {recall}, {f1}')
 
-    # 所有epochs完成后保存模型
     if save_model:
         if not os.path.exists(model_save_path):
             os.makedirs(model_save_path)
@@ -240,10 +212,8 @@ def load_model(model, model_path):
 # 测试完整句子的识别
 def predict_sentence(model, tokenizer, sentence, max_len):
     model.eval()
-    # 将输入句子拆分成字符或词语
     sentence_tokens = list(sentence)
 
-    # 对输入句子进行tokenize
     encoding = tokenizer(sentence_tokens,
                          is_split_into_words=True,
                          return_offsets_mapping=False,
@@ -258,14 +228,9 @@ def predict_sentence(model, tokenizer, sentence, max_len):
     with torch.no_grad():
         preds = model(input_ids, attention_mask)
 
-    # 将预测结果转换为标签
     pred_labels = preds[0]  # 只取第一个样本（单句）
-
-    # 将标签索引映射回标签名
     idx2tag = {v: k for k, v in dataset.label_map.items()}
     pred_tags = [idx2tag.get(p, 'O') for p in pred_labels]
-
-    # 过滤掉padding部分
     valid_pred_tags = pred_tags[:attention_mask.sum().item()]
 
     return list(zip(sentence_tokens, valid_pred_tags))
@@ -285,11 +250,10 @@ def evaluate_model(model, dataloader):
             preds = model(input_ids, attention_mask)
 
             for pred, label, mask in zip(preds, labels, attention_mask):
-                valid_length = mask.sum().item()  # 获取有效长度，去除padding
-                all_predictions.extend(pred[:valid_length])  # 添加有效长度的预测结果
-                all_labels.extend(label[:valid_length].cpu().numpy())  # 添加有效长度的真实标签
+                valid_length = mask.sum().item()
+                all_predictions.extend(pred[:valid_length])
+                all_labels.extend(label[:valid_length].cpu().numpy())
 
-    # 计算评估指标
     accuracy = accuracy_score(all_labels, all_predictions)
     precision = precision_score(all_labels, all_predictions, average='weighted', zero_division=0)
     recall = recall_score(all_labels, all_predictions, average='weighted', zero_division=0)
@@ -301,7 +265,7 @@ if __name__ == "__main__":
     # 参数配置
     data_file = '../datasets/bio_data/all_bio_data.txt'
     bert_model_name = 'bert-base-chinese'
-    model_epochs = 2
+    model_epochs = 1
     batch_size = 32
     hidden_dim = 256
     max_len = 256
@@ -309,8 +273,26 @@ if __name__ == "__main__":
     test_sentence = '民用无人机大范围使用，其中包含了大量的传感器，比如姿态传感器。'
 
     # 添加是否保存日志和模型的开关
-    save_log_flag = False
+    save_log_flag = True  # 设置为 False，日志不应保存到文件
     save_model_flag = False
+
+    # 动态配置日志记录器
+    log_dir = '../log'
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    current_date = datetime.datetime.now().strftime("%Y%m%d")
+    script_name = os.path.basename(__file__)
+    log_file = os.path.join(log_dir, f"{current_date}_{script_name.replace('.py', '.log')}")
+
+    handlers = [logging.StreamHandler()]  # 默认只输出到控制台
+    if save_log_flag:
+        handlers.append(logging.FileHandler(log_file))  # 如果需要保存日志，则添加文件处理器
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=handlers
+    )
 
     # 加载数据集
     sentences, labels = read_data_from_txt(data_file)
